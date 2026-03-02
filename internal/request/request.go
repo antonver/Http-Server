@@ -14,11 +14,6 @@ type Request struct {
 	state State
 }
 
-const (
-	StateRequestLine = iota
-	StateDone
-)
-
 type RequestLine struct {
 	HttpVersion   string
 	RequestTarget string
@@ -26,43 +21,57 @@ type RequestLine struct {
 }
 
 
+const (
+	Initialized = iota
+	Done
+)
+
+
+
 
 func RequestFromReader(reader io.Reader) (*Request, error){
-	buff := make([]byte, 0, 8)
-	tmp := make([]byte, 256)
-	req := &Request{state: StateRequestLine}
-	for{
-		n, err := reader.Read(tmp)
-		if err != nil{
-			return &Request{}, err
-		}
-		buff = append(buff, tmp[:n]...)
-		consumed, err := req.parse(buff)
-		if err != nil{
-			return  &Request{}, err
-		}
-		if consumed > 0{
-			buff = buff[consumed:]
-		}
-		if req.state == StateDone{
-			return req, nil
-		}
-
+	const bufferSize = 1024
+	buff := make([]byte, bufferSize)
+	req := &Request{state: Initialized}
+	readToIndex := 0
+for {
+	if readToIndex == len(buff){
+		new_buff := make([]byte, len(buff) * 2)
+		copy(new_buff, buff) 
+		buff = new_buff
 	}
+	n, readErr := reader.Read(buff[readToIndex:])
+    readToIndex += n
+	consumed, parseErr := req.parse(buff[:readToIndex])
+	if parseErr != nil{
+		return nil, parseErr
+	}
+	copy(buff, buff[consumed:readToIndex])
+	readToIndex -= consumed
+	if req.state == Done{
+		return req, nil
+	}
+	if readErr != nil{
+		if readErr == io.EOF{
+			return nil, io.ErrUnexpectedEOF 
+		}
+		return nil, readErr
+	}
+}
 	
 }
 
 func parseRequestLine(data string) (RequestLine, int, error){
 	n := strings.Index(data, "\r\n")
-	if n == -1 {
+	if n == -1{
 		return RequestLine{}, 0, nil
 	}
 	line := strings.Fields(data[:n])
+	if len(line) != 3{
+		return RequestLine{}, 0, errors.New("Request line must consist of 3 elements")
+	}
 	fmt.Println(line)
 	method := line[0]
-	if len(line) != 3{
-		return RequestLine{}, 0, errors.New("Request line cant have more or less than 3 elements")
-	}
 	if strings.ToUpper(method) != method{
 		return RequestLine{}, 0, errors.New("Method is not in the upper case")
 	}
@@ -90,7 +99,7 @@ func parseRequestLine(data string) (RequestLine, int, error){
 
 func (r *Request) parse(data []byte) (int, error){
 	switch r.state{
-	case StateRequestLine:
+	case Initialized:
 		res, n, err := parseRequestLine(string(data))
 		if err!= nil{
 			return 0, err}
@@ -98,13 +107,12 @@ func (r *Request) parse(data []byte) (int, error){
 			return 0, nil
 		}
 		r.RequestLine = res
-		r.state = StateDone
+		r.state = Done
 		return n, nil
 		
-	case StateDone:
-		return 0,nil
+	case Done:
+		return 0,errors.New("Parsing is already done")
 	
 }
 return 0, nil
 	}
-
