@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"github.com/antonver/Http-Server/internal/headers"
 )
 
 type State int;
 
 type Request struct {
 	RequestLine RequestLine
+	Headers headers.Headers
 	state State
 }
 
@@ -23,6 +25,7 @@ type RequestLine struct {
 
 const (
 	Initialized = iota
+	requestStateParsingHeaders
 	Done
 )
 
@@ -32,7 +35,9 @@ const (
 func RequestFromReader(reader io.Reader) (*Request, error){
 	const bufferSize = 1024
 	buff := make([]byte, bufferSize)
-	req := &Request{state: Initialized}
+	req := &Request{state: Initialized,
+	Headers: headers.NewHeaders(),
+	}
 	readToIndex := 0
 for {
 	if readToIndex == len(buff){
@@ -49,6 +54,9 @@ for {
 	copy(buff, buff[consumed:readToIndex])
 	readToIndex -= consumed
 	if req.state == Done{
+		if len(req.Headers) == 0{
+			return req, errors.New("We must have at least one header")
+		}
 		return req, nil
 	}
 	if readErr != nil{
@@ -98,6 +106,25 @@ func parseRequestLine(data string) (RequestLine, int, error){
 
 
 func (r *Request) parse(data []byte) (int, error){
+	totalBytesParsed := 0
+	for totalBytesParsed < len(data) && r.state != Done{
+		n, err := r.parseSingle(data[totalBytesParsed:])
+		totalBytesParsed += n
+		if err != nil{
+			return 0, err
+		}
+		if n == 0{
+			return totalBytesParsed, nil
+		}
+	}
+	return totalBytesParsed, nil
+
+}
+
+
+
+
+func (r *Request) parseSingle(data []byte)(int, error){
 	switch r.state{
 	case Initialized:
 		res, n, err := parseRequestLine(string(data))
@@ -107,12 +134,26 @@ func (r *Request) parse(data []byte) (int, error){
 			return 0, nil
 		}
 		r.RequestLine = res
-		r.state = Done
+		r.state = requestStateParsingHeaders
 		return n, nil
-		
+	case requestStateParsingHeaders:
+    		n, done, err := r.Headers.Parse(data)
+			if done{
+				r.state = Done
+				return n, nil
+			}
+			if err != nil{
+				return 0, err
+			}
+			if n == 0 {
+				return n, nil
+        }
+			return n, nil
+			
+			
 	case Done:
-		return 0,errors.New("Parsing is already done")
-	
+		return 0, errors.New("Parsing is already done")
+
 }
-return 0, nil
+			return 0, nil
 	}
