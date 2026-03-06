@@ -30,21 +30,22 @@ func main() {
 			fmt.Println("Error reading line:", err)
 		}
 		
-		fmt.Printf(`Request line: \n
-	- Method: %s\n
-	- Target: %s\n
-	- Version: %s\n
-	Headers:\n
+		fmt.Printf(`Request line
+	- Method: %s
+	- Target: %s
+	- Version: %s
+	Headers:
 	`,
 		line.RequestLine.Method,
 		line.RequestLine.RequestTarget,
 		line.RequestLine.HttpVersion,
 	
-)		
+)	
 		for key, val := range line.Headers{
 			fmt.Printf("%s: %s", key, val)
 		}
-		
+		fmt.Println("Body:")
+		fmt.Println(string(line.Body))
 		conn.Close()
 		fmt.Println("connection closed")
 

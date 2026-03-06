@@ -2,9 +2,10 @@ package request
 
 import (
 	"errors"
-	"fmt"
 	"io"
+	"strconv"
 	"strings"
+
 	"github.com/antonver/Http-Server/internal/headers"
 )
 
@@ -14,6 +15,7 @@ type Request struct {
 	RequestLine RequestLine
 	Headers headers.Headers
 	state State
+	Body []byte
 }
 
 type RequestLine struct {
@@ -24,9 +26,10 @@ type RequestLine struct {
 
 
 const (
-	Initialized = iota
+	requestStateParsingRequestLine = iota
 	requestStateParsingHeaders
-	Done
+	requestStateParsingBody
+	requestStateParsingDone
 )
 
 
@@ -35,7 +38,7 @@ const (
 func RequestFromReader(reader io.Reader) (*Request, error){
 	const bufferSize = 1024
 	buff := make([]byte, bufferSize)
-	req := &Request{state: Initialized,
+	req := &Request{state: requestStateParsingRequestLine,
 	Headers: headers.NewHeaders(),
 	}
 	readToIndex := 0
@@ -49,11 +52,11 @@ for {
     readToIndex += n
 	consumed, parseErr := req.parse(buff[:readToIndex])
 	if parseErr != nil{
-		return nil, parseErr
+		return req, parseErr
 	}
 	copy(buff, buff[consumed:readToIndex])
 	readToIndex -= consumed
-	if req.state == Done{
+	if req.state == requestStateParsingDone{
 		if len(req.Headers) == 0{
 			return req, errors.New("We must have at least one header")
 		}
@@ -63,7 +66,7 @@ for {
 		if readErr == io.EOF{
 			return nil, io.ErrUnexpectedEOF 
 		}
-		return nil, readErr
+		return req, readErr
 	}
 }
 	
@@ -78,7 +81,6 @@ func parseRequestLine(data string) (RequestLine, int, error){
 	if len(line) != 3{
 		return RequestLine{}, 0, errors.New("Request line must consist of 3 elements")
 	}
-	fmt.Println(line)
 	method := line[0]
 	if strings.ToUpper(method) != method{
 		return RequestLine{}, 0, errors.New("Method is not in the upper case")
@@ -107,7 +109,7 @@ func parseRequestLine(data string) (RequestLine, int, error){
 
 func (r *Request) parse(data []byte) (int, error){
 	totalBytesParsed := 0
-	for totalBytesParsed < len(data) && r.state != Done{
+	for r.state != requestStateParsingDone{
 		n, err := r.parseSingle(data[totalBytesParsed:])
 		totalBytesParsed += n
 		if err != nil{
@@ -126,7 +128,7 @@ func (r *Request) parse(data []byte) (int, error){
 
 func (r *Request) parseSingle(data []byte)(int, error){
 	switch r.state{
-	case Initialized:
+	case requestStateParsingRequestLine:
 		res, n, err := parseRequestLine(string(data))
 		if err!= nil{
 			return 0, err}
@@ -139,7 +141,7 @@ func (r *Request) parseSingle(data []byte)(int, error){
 	case requestStateParsingHeaders:
     		n, done, err := r.Headers.Parse(data)
 			if done{
-				r.state = Done
+				r.state = requestStateParsingBody
 				return n, nil
 			}
 			if err != nil{
@@ -150,10 +152,45 @@ func (r *Request) parseSingle(data []byte)(int, error){
         }
 			return n, nil
 			
-			
-	case Done:
+	case requestStateParsingBody:
+		content_length := r.Headers.Get("Content-Length") 
+		n, err := r.parseBody(data, content_length)
+		if err!= nil{
+			return 0, err
+		}
+		if n == 0{
+			return 0, nil
+		}
+		return n, nil
+	case requestStateParsingDone:
 		return 0, errors.New("Parsing is already done")
 
 }
 			return 0, nil
 	}
+
+
+
+func (r *Request) parseBody(data []byte, content_length string) (int, error){
+	sData := string(data)
+	content_length_int, ok := strconv.Atoi(content_length)
+	if content_length == ""{
+			r.state = requestStateParsingDone
+			return 0, nil
+		}
+	if ok != nil{
+		return 0, errors.New("Content_length header is not a number")
+	}
+	if content_length_int > len(data){
+		return 0, nil
+	}
+	if content_length_int < len(data){
+		return 0, errors.New("Content length cann't be bigger than length precised in content-length header")
+	} 
+	if content_length_int != len(sData){
+		return 0, errors.New("Body length differ from length precised in content-length header")
+	}
+	r.state = requestStateParsingDone
+	r.Body = data
+	return len(data), nil
+}

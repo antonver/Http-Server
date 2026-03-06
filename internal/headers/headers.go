@@ -74,3 +74,11 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	}
 	return totalConsumed, false, nil
 }
+
+func (h Headers) Get(key string) string{
+	v, ok := h[strings.ToLower(key)]
+	if ok{
+		return v
+	}
+	return ""
+}
