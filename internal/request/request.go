@@ -9,7 +9,7 @@ import (
 	"github.com/antonver/Http-Server/internal/headers"
 )
 
-type State int;
+type State int
 
 type Request struct {
 	RequestLine RequestLine
@@ -26,7 +26,7 @@ type RequestLine struct {
 
 
 const (
-	requestStateParsingRequestLine = iota
+	requestStateParsingRequestLine State = iota
 	requestStateParsingHeaders
 	requestStateParsingBody
 	requestStateParsingDone
