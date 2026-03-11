@@ -118,12 +118,35 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
 }
 
 
-func (w *Writer) WriteChunkedBody(p []byte) (int, error){
-	n, err := w.W.Write([]byte(fmt.Sprintf("%x", len(p))))
-	return n, err
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+    chunkHeader := []byte(fmt.Sprintf("%x\r\n", len(p)))
+    
+    n1, err := w.W.Write(chunkHeader)
+    if err != nil { return n1, err }
+    
+    n2, err := w.W.Write(p)
+    if err != nil { return n1 + n2, err }
+
+    n3, err := w.W.Write([]byte("\r\n"))
+    return n1 + n2 + n3, err
 }
 
 func (w *Writer) WriteChunkedBodyDone() (int, error){
-	n, err := w.W.Write([]byte("\r\n"))
+	info := []byte(fmt.Sprintf("%x\r\n", 0))
+	n, err := w.W.Write(info)
 	return n, err
+}
+
+
+func (w *Writer) WriteTrailers(h headers.Headers) error{
+
+for key, val := range h {
+		_, err := w.W.Write([]byte(fmt.Sprintf("%s: %s\r\n", strings.TrimSpace(key), val)))
+		if err != nil {
+			return err
+		}
+	}
+	w.W.Write([]byte("\r\n"))
+	return nil
+
 }
